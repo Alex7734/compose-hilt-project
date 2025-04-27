@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.Date
 import javax.inject.Inject
 
 /**
@@ -28,14 +29,14 @@ class TodoViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
-    private val _searchResult = MutableStateFlow<Todo?>(null)
-    val searchResult: StateFlow<Todo?> = _searchResult
+    private val _selectedTodo = MutableStateFlow<Todo?>(null)
+    val selectedTodo: StateFlow<Todo?> = _selectedTodo
 
     init {
         fetchTodos()
     }
 
-    private fun fetchTodos() {
+    fun fetchTodos() {
         viewModelScope.launch {
             _loading.value = true
             _error.value = null
@@ -56,40 +57,162 @@ class TodoViewModel @Inject constructor(
 
     fun addTodo(todo: Todo) {
         viewModelScope.launch {
+            _loading.value = true
             try {
                 val newTodo = repository.createTodo(todo)
                 if (newTodo != null) {
-                    _todos.value = _todos.value + newTodo
+                    fetchTodos()
+                } else {
+                    _error.value = "Failed to create todo."
                 }
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to add todo."
+            } finally {
+                _loading.value = false
             }
         }
     }
 
     fun completeTodo(todo: Todo) {
         viewModelScope.launch {
+            _loading.value = true
             try {
                 val updatedTodo = repository.updateTodo(todo.copy(completed = true))
                 if (updatedTodo != null) {
                     _todos.value = _todos.value.map {
                         if (it.id == updatedTodo.id) updatedTodo else it
                     }
+                    if (_selectedTodo.value?.id == updatedTodo.id) {
+                        _selectedTodo.value = updatedTodo
+                    }
+                } else {
+                    _error.value = "Failed to update todo."
                 }
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to complete todo."
+            } finally {
+                _loading.value = false
             }
         }
     }
 
-    fun searchTodoById(id: String) {
+    fun getTodoById(id: String) {
         viewModelScope.launch {
+            _loading.value = true
             try {
-                val result = repository.searchTodoById(id)
-                _searchResult.value = result
+                val result = repository.getTodoById(id)
+                if (result != null) {
+                    _selectedTodo.value = result
+                } else {
+                    _error.value = "Todo not found."
+                }
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to search todo."
+                _error.value = e.message ?: "Failed to get todo."
+            } finally {
+                _loading.value = false
             }
         }
+    }
+
+    fun updateTodoWithNotification(id: String, completed: Boolean? = null, recurringEvery: Long? = null, notificationAt: Date? = null) {
+        viewModelScope.launch {
+            _loading.value = true
+            try {
+                val result = repository.updateTodoWithNotification(id, completed, recurringEvery, notificationAt)
+                if (result != null) {
+                    fetchTodos()
+                    if (_selectedTodo.value?.id == id) {
+                        _selectedTodo.value = result
+                    }
+                } else {
+                    _error.value = "Failed to update todo with notification."
+                }
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to update todo."
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun deleteTodo(id: String) {
+        viewModelScope.launch {
+            _loading.value = true
+            try {
+                val success = repository.deleteTodo(id)
+                if (success) {
+                    // Remove the deleted todo from the list
+                    _todos.value = _todos.value.filter { it.id != id }
+                    // Clear selected todo if it was deleted
+                    if (_selectedTodo.value?.id == id) {
+                        _selectedTodo.value = null
+                    }
+                } else {
+                    _error.value = "Failed to delete todo."
+                }
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to delete todo."
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun loadUpcomingNotifications(days: Int? = null) {
+        viewModelScope.launch {
+            _loading.value = true
+            try {
+                val notifications = repository.getUpcomingNotifications(days)
+                if (notifications != null) {
+                    _todos.value = notifications
+                } else {
+                    _error.value = "Failed to load upcoming notifications."
+                }
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to load upcoming notifications."
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun loadOverdueNotifications() {
+        viewModelScope.launch {
+            _loading.value = true
+            try {
+                val notifications = repository.getOverdueNotifications()
+                if (notifications != null) {
+                    _todos.value = notifications
+                } else {
+                    _error.value = "Failed to load overdue notifications."
+                }
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to load overdue notifications."
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun loadRecurringTodos() {
+        viewModelScope.launch {
+            _loading.value = true
+            try {
+                val todos = repository.getRecurringTodos()
+                if (todos != null) {
+                    _todos.value = todos
+                } else {
+                    _error.value = "Failed to load recurring todos."
+                }
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to load recurring todos."
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 }
